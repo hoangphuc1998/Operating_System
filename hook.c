@@ -41,6 +41,10 @@ asmlinkage int our_sys_open(const char* filename, int flags, int mode) {
 asmlinkage int our_sys_write(unsigned int fd, const char* buf, int count) {
     int pid = current->pid;
     char buff[100];
+    char filename[50];
+    char fd_string[30];
+    sprintf(fd_string,"/proc/self/fd/%d",fd);
+    readlink(fd_string,filename,50);
     int result = sys_pidtoname(pid, buff, 100);
     if (result!=-1 && result!=0){
         printk(KERN_INFO "(Our Write Syscall) Process name: %s", buff);
@@ -48,8 +52,8 @@ asmlinkage int our_sys_write(unsigned int fd, const char* buf, int count) {
         printk(KERN_INFO "(Our Write Syscall) Error");
     }
     int bytes_write = original_sys_write(fd, buf, count);
-    
-    printk(KERN_INFO "(Our Write Syscall) File name: %d", fd);
+
+    printk(KERN_INFO "(Our Write Syscall) File name: %s", filename);
     printk(KERN_INFO "(Our Write Syscall) Number of Written Bytes: %d", bytes_write);
     return bytes_write;
 }
