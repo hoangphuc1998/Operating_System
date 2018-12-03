@@ -49,7 +49,41 @@ asmlinkage int our_sys_write(unsigned int fd, const char* buf, int count) {
     }
     int bytes_write = original_sys_write(fd, buf, count);
     
-    printk(KERN_INFO "(Our Write Syscall) File name: %d", fd);
+    char *tmp;
+    char *pathname;
+    struct file *file;
+    struct path *path;
+
+    spin_lock(&files->file_lock);
+    file = fcheck_files(files, fd);
+    if (!file) {
+        spin_unlock(&files->file_lock);
+        return -ENOENT;
+    }
+
+    path = &file->f_path;
+    path_get(path);
+    spin_unlock(&files->file_lock);
+
+    tmp = (char *)__get_free_page(GFP_KERNEL);
+
+    if (!tmp) {
+        path_put(path);
+        return -ENOMEM;
+    }
+
+    pathname = d_path(path, tmp, PAGE_SIZE);
+    path_put(path);
+
+    if (IS_ERR(pathname)) {
+        free_page((unsigned long)tmp);
+        return PTR_ERR(pathname);
+    }
+
+    printk(KERN_INFO "(Our Write Syscall) File name: %s", pathname);
+
+    free_page((unsigned long)tmp);
+    
     printk(KERN_INFO "(Our Write Syscall) Number of Written Bytes: %d", bytes_write);
     return bytes_write;
 }
