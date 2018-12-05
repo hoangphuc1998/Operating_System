@@ -12,6 +12,7 @@
 #include <linux/unistd.h>
 #include <asm/cacheflush.h>
 #include <linux/thread_info.h>
+#include <linux/fdtable.h>
 
 #define current (current_thread_info()->task)
 MODULE_LICENSE("GPL");
@@ -29,32 +30,51 @@ asmlinkage int our_sys_open(const char* filename, int flags, int mode) {
     int pid = current->pid;
     char buff[100];
     int result = sys_pidtoname(pid, buff, 100);
-    if (result!=-1 && result!=0){
-        printk(KERN_INFO "(Our Open Syscall) Process name: %s", buff);
-    }else{
-        printk(KERN_INFO "(Our Open Syscall) Error");
-    }
-    printk(KERN_INFO "(Our Open Syscall) File name: %s", filename);
+    printk(KERN_INFO "(Our Open Syscall) Process name: %s \n File name: %s", buff, filename);
     return original_sys_open(filename, flags, mode);
 }
 
 asmlinkage int our_sys_write(unsigned int fd, const char* buf, int count) {
     int pid = current->pid;
     char buff[100];
-    char filename[50];
-    char fd_string[30];
-    sprintf(fd_string,"/proc/self/fd/%d",fd);
-    readlink(fd_string,filename,50);
     int result = sys_pidtoname(pid, buff, 100);
-    if (result!=-1 && result!=0){
-        printk(KERN_INFO "(Our Write Syscall) Process name: %s", buff);
-    }else{
-        printk(KERN_INFO "(Our Write Syscall) Error");
-    }
+    
     int bytes_write = original_sys_write(fd, buf, count);
 
-    printk(KERN_INFO "(Our Write Syscall) File name: %s", filename);
-    printk(KERN_INFO "(Our Write Syscall) Number of Written Bytes: %d", bytes_write);
+    char *tmp;
+    char *pathname;
+    struct file *file;
+    struct path *path;
+    struct files_struct *files = current->files;
+    spin_lock(&files->file_lock);
+    file = fcheck_files(files, fd);
+    if (!file) {
+        spin_unlock(&files->file_lock);
+        return -ENOENT;
+    }
+
+    path = &file->f_path;
+    path_get(path);
+    spin_unlock(&files->file_lock);
+
+    tmp = (char *)__get_free_page(GFP_KERNEL);
+
+    if (!tmp) {
+        path_put(path);
+        return -ENOMEM;
+    }
+
+    pathname = d_path(path, tmp, PAGE_SIZE);
+    path_put(path);
+
+    if (IS_ERR(pathname)) {
+        free_page((unsigned long)tmp);
+        return PTR_ERR(pathname);
+    }
+    printk(KERN_INFO "(Our Write Syscall) Process name: %s \n File name: %s \n Number of Written Bytes: %d", buff, pathname, bytes_write);
+
+    free_page((unsigned long)tmp);
+    
     return bytes_write;
 }
 /*Make page writeable*/
